@@ -99,8 +99,8 @@ ble   = BLE(on_command, on_schedule, on_datetime)
 
 # ── Try NTP sync ─────────────────────────────────────────────────
 # Replace with your WiFi credentials
-WIFI_SSID     = "your_ssid"
-WIFI_PASSWORD = "your_password"
+WIFI_SSID     = "Pixel_9754"
+WIFI_PASSWORD = "CBHNCSU47"
 sync_time(WIFI_SSID, WIFI_PASSWORD)
 
 print("System ready")
