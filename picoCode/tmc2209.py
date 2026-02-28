@@ -16,7 +16,6 @@ class TMC2209:
         
         #Sets initial conditions
         self.en.value(1)
-        self.stdby.value(0)
     
     def sleep(self):
         # Put driver into standby - lowest power state
