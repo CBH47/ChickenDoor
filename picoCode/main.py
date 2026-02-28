@@ -91,6 +91,7 @@ def handle_close():
 print("Booting DoorMotor...")
 
 motor = Motor()
+motor.driver.configure()
 sm    = StateMachine()
 sched = Scheduler()
 batt  = Battery()
