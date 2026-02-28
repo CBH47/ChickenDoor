@@ -10,24 +10,17 @@ class TMC2209:
         self.step = Pin(2, Pin.OUT)
         self.dir = Pin(3, Pin.OUT)
         self.en = Pin(4,Pin.OUT)
-        self.stdby = Pin(5, Pin.OUT)
-        
+
         #Sets diag as input
         self.diag = Pin(18, Pin.IN, Pin.PULL_DOWN)
         
         #Sets initial conditions
         self.en.value(1)
         self.stdby.value(0)
-        
-    def wake(self):
-        # Bring driver out of standby and give it time to boot
-        self.stdby.value(1)
-        time.sleep_ms(10)
     
     def sleep(self):
         # Put driver into standby - lowest power state
         self.en.value(1)
-        self.stdby.value(0)
     
     def enable(self):
         # Enable motor outputs - motor will hold position
