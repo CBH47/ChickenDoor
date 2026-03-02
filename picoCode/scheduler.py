@@ -4,10 +4,12 @@ import time
 
 class Scheduler:
     def __init__(self):
+        print("Scheduler init...")
         self.rules = []
         self.schedule_file = "schedule.json"
         self.last_checked_minute = -1
         self.load()
+        print("Scheduler done")
 
     def load(self):
         # Load rules from flash storage if file exists

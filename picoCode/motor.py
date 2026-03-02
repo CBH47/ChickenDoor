@@ -8,8 +8,6 @@ class Motor:
         self.max_steps = 2000
 
     def move(self, direction, steps):
-        # Move motor in a direction (1=open, 0=close)
-        # Returns 'DONE', 'STALL', or 'TIMEOUT'
         self.driver.enable()
         self.driver.dir.value(direction)
         time.sleep_ms(5)
@@ -20,9 +18,9 @@ class Motor:
                 return "STALL"
 
             self.driver.step.value(1)
-            time.sleep_us(self.step_delay_us // 2)
+            time.sleep_us(500)
             self.driver.step.value(0)
-            time.sleep_us(self.step_delay_us // 2)
+            time.sleep_us(500)
 
         self.driver.disable()
         return "DONE"

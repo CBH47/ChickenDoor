@@ -25,12 +25,17 @@ def sync_time(ssid, password):
             wlan.disconnect()
             wlan.active(False)
             return
+        print(f"Waiting... status: {wlan.status()}")
         time.sleep(1)
     print("WiFi connection failed, time not synced")
     wlan.active(False)
 
 # ── Callbacks from BLE ───────────────────────────────────────────
 def on_command(cmd):
+    if cmd == "CONFIG":
+        motor.driver.configure()
+        ble.notify_status("RECONFIGURED")
+        return
     if not sm.can_accept_command():
         print(f"Command ignored, state is {sm.get_state()}")
         return
@@ -69,6 +74,7 @@ def handle_open():
     sm.transition("OPENING")
     ble.notify_status("OPENING")
     result = motor.move(1, motor.max_steps)
+    time.sleep_ms(500)
     if result == "STALL":
         sm.transition("OPEN")
         ble.notify_status("OPEN")
@@ -80,6 +86,7 @@ def handle_close():
     sm.transition("CLOSING")
     ble.notify_status("CLOSING")
     result = motor.move(0, motor.max_steps)
+    time.sleep_ms(500)
     if result == "STALL":
         sm.transition("CLOSED")
         ble.notify_status("CLOSED")
@@ -89,8 +96,9 @@ def handle_close():
 
 # ── Initialise all layers ────────────────────────────────────────
 print("Booting DoorMotor...")
-
+time.sleep(3)
 motor = Motor()
+time.sleep(1)
 motor.driver.configure()
 sm    = StateMachine()
 sched = Scheduler()
@@ -101,7 +109,10 @@ ble   = BLE(on_command, on_schedule, on_datetime)
 # Replace with your WiFi credentials
 WIFI_SSID     = "Pixel_9754"
 WIFI_PASSWORD = "CBHNCSU47"
-sync_time(WIFI_SSID, WIFI_PASSWORD)
+try:
+    sync_time(WIFI_SSID, WIFI_PASSWORD)
+except Exception as e:
+    print(f"sync_time crashed: {e}")
 
 print("System ready")
 ble.notify_status("IDLE")
