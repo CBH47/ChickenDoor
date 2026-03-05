@@ -15,6 +15,6 @@ def test_stall(threshold, steps=1000):
     return result
 
 print("Stall tuner ready")
-print("Run test_stall(value) with values from 0-255")
+print("Run test_stall(value) with values from 0-255")x
 print("Start low and increase until stall triggers during normal movement")
 print("Then back off to 60% of that value")

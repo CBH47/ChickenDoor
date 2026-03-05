@@ -8,7 +8,10 @@ from ble import BLE
 import network
 import ntptime
 
-# ── NTP time sync ────────────────────────────────────────────────
+# track when the auto-close timer is supposed to expire
+timer_end_time = None
+
+# hook up to wifi and get time from ntp
 def sync_time(ssid, password):
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
@@ -30,24 +33,41 @@ def sync_time(ssid, password):
     print("WiFi connection failed, time not synced")
     wlan.active(False)
 
-# ── Callbacks from BLE ───────────────────────────────────────────
+# handling commands that come from the phone
 def on_command(cmd):
+    global timer_end_time
+    
     if cmd == "CONFIG":
         motor.driver.configure()
         ble.notify_status("RECONFIGURED")
         return
+    
+    # parse and handle timer: "TIMER:minutes" format
+    if cmd.startswith("TIMER:"):
+        try:
+            minutes = int(cmd.split(":")[1])
+            if minutes > 0:
+                handle_open()
+                timer_end_time = time.time() + (minutes * 60)
+                print(f"Timer set: door will auto-close in {minutes} minutes")
+                return
+        except Exception as e:
+            print(f"Timer parse error: {e}")
+    
     if not sm.can_accept_command():
         print(f"Command ignored, state is {sm.get_state()}")
         return
     if cmd == "OPEN":
         handle_open()
+        timer_end_time = None
     elif cmd == "CLOSE":
         handle_close()
+        timer_end_time = None
     else:
         print(f"Unknown command: {cmd}")
 
 def on_schedule(payload):
-    # Phone is writing a new schedule as JSON
+    # phone sent new schedule as json
     try:
         import json
         rules = json.loads(payload)
@@ -59,7 +79,7 @@ def on_schedule(payload):
         print(f"Schedule parse error: {e}")
 
 def on_datetime(payload):
-    # Phone is setting the time as a Unix timestamp
+    # phone is giving us the time as unix timestamp
     try:
         import machine
         ts = int(payload)
@@ -69,7 +89,7 @@ def on_datetime(payload):
     except Exception as e:
         print(f"DateTime parse error: {e}")
 
-# ── Motor actions ────────────────────────────────────────────────
+# motor movement stuff
 def handle_open():
     sm.transition("OPENING")
     ble.notify_status("OPENING")
@@ -94,7 +114,7 @@ def handle_close():
         sm.transition("CLOSED")
         ble.notify_status("CLOSED")
 
-# ── Initialise all layers ────────────────────────────────────────
+# fire up all the subsystems
 print("Booting DoorMotor...")
 time.sleep(3)
 motor = Motor()
@@ -105,8 +125,8 @@ sched = Scheduler()
 batt  = Battery()
 ble   = BLE(on_command, on_schedule, on_datetime)
 
-# ── Try NTP sync ─────────────────────────────────────────────────
-# Replace with your WiFi credentials
+# try to get current time from internet
+# TODO: replace with your wifi creds
 WIFI_SSID     = "Pixel_9754"
 WIFI_PASSWORD = "CBHNCSU47"
 try:
@@ -117,16 +137,22 @@ except Exception as e:
 print("System ready")
 ble.notify_status("IDLE")
 
-# ── Main loop ────────────────────────────────────────────────────
+# main event loop runs here
 last_battery_check = 0
 
 while True:
-    # Check scheduler
+    # check if scheduler has something for us
     action = sched.check()
     if action:
         on_command(action)
 
-    # Check battery every 30 seconds when idle
+    # if timer is running, check if it expired
+    if timer_end_time is not None and time.time() >= timer_end_time:
+        print("Timer expired, closing door")
+        handle_close()
+        timer_end_time = None
+
+    # check battery every 30s when not doing anything
     if not sm.is_busy() and batt.should_sample():
         voltage = batt.read_voltage()
         status  = batt.get_status()

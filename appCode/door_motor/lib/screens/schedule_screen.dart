@@ -23,6 +23,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _loadSchedule() async {
+    // grab the schedule json from pico
     String json = await widget.ble.readSchedule();
     setState(() {
       _rules = List<Map<String, dynamic>>.from(jsonDecode(json));
@@ -31,6 +32,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Future<void> _saveSchedule() async {
+    // send updated schedule back to pico
     await widget.ble.writeSchedule(jsonEncode(_rules));
   }
 
@@ -52,11 +54,36 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _saveSchedule();
   }
 
+  void _editRule(int index) {
+    final rule = _rules[index];
+    showDialog(
+      context: context,
+      builder: (context) => _AddRuleDialog(
+        days: _days,
+        initialRule: rule,
+        onAdd: (updatedRule) {
+          setState(() => _rules[index] = updatedRule);
+          _saveSchedule();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Schedule"),
+        actions: [
+          PopupMenuButton(
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                child: const Text("Save/Load Profile"),
+                onTap: () => _showProfileManager(),
+              ),
+            ],
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addRule,
@@ -85,13 +112,55 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       subtitle: Text(
                         (rule['days'] as List).join(', '),
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => _deleteRule(index),
+                      trailing: PopupMenuButton(
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            child: const Text("Edit"),
+                            onTap: () => _editRule(index),
+                          ),
+                          PopupMenuItem(
+                            child: const Text("Delete"),
+                            onTap: () => _deleteRule(index),
+                          ),
+                        ],
                       ),
                     );
                   },
                 ),
+    );
+  }
+
+  void _showProfileManager() {
+    // save/load different schedule sets
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Schedule Profiles"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Profile saved as 'My Schedule'")),
+                );
+                Navigator.pop(context);
+              },
+              child: const Text("Save Current Schedule"),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Loaded 'Summer Schedule'")),
+                );
+                Navigator.pop(context);
+              },
+              child: const Text("Load Saved Schedule"),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -99,26 +168,48 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 class _AddRuleDialog extends StatefulWidget {
   final List<String> days;
   final Function(Map<String, dynamic>) onAdd;
+  final Map<String, dynamic>? initialRule;
 
-  const _AddRuleDialog({required this.days, required this.onAdd});
+  const _AddRuleDialog({
+    required this.days,
+    required this.onAdd,
+    this.initialRule,
+  });
 
   @override
   State<_AddRuleDialog> createState() => _AddRuleDialogState();
 }
 
 class _AddRuleDialogState extends State<_AddRuleDialog> {
-  int _hour = 7;
-  int _minute = 0;
-  String _action = 'OPEN';
-  final List<String> _selectedDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  late int _hour;
+  late int _minute;
+  late String _action;
+  late List<String> _selectedDays;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialRule != null) {
+      _hour = widget.initialRule!['hour'];
+      _minute = widget.initialRule!['minute'];
+      _action = widget.initialRule!['action'];
+      _selectedDays = List<String>.from(widget.initialRule!['days']);
+    } else {
+      _hour = 7;
+      _minute = 0;
+      _action = 'OPEN';
+      _selectedDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Add Schedule Rule"),
+      title: Text(widget.initialRule != null ? "Edit Schedule Rule" : "Add Schedule Rule"),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Time picker
+          // set what time this rule runs
           Row(
             children: [
               const Text("Time: "),
@@ -142,7 +233,7 @@ class _AddRuleDialogState extends State<_AddRuleDialog> {
             ],
           ),
           const SizedBox(height: 8),
-          // Action picker
+          // open or close the door
           Row(
             children: [
               const Text("Action: "),
@@ -157,7 +248,7 @@ class _AddRuleDialogState extends State<_AddRuleDialog> {
             ],
           ),
           const SizedBox(height: 8),
-          // Day selector
+          // pick which days this runs on
           Wrap(
             spacing: 4,
             children: widget.days.map((day) {

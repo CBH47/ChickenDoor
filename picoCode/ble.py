@@ -16,12 +16,23 @@ _STATUS_CHAR_UUID   = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef2")
 _DATETIME_CHAR_UUID = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef3")
 _SCHEDULE_CHAR_UUID = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef4")
 _BATTERY_CHAR_UUID  = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef5")
+_DEVICE_NAME_CHAR_UUID = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef6")
+_TIMEZONE_CHAR_UUID    = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef7")
+_FIRMWARE_CHAR_UUID    = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef8")
+_SETTINGS_CHAR_UUID    = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef9")
+_OVERRIDE_CHAR_UUID    = bluetooth.UUID("12345678-1234-5678-1234-56789abcdefa")
 
 class BLE:
     def __init__(self, command_callback, schedule_callback, datetime_callback):
         self.command_callback  = command_callback
         self.schedule_callback = schedule_callback
         self.datetime_callback = datetime_callback
+
+        # stash for device config
+        self.device_name = "DoorMotor"
+        self.timezone = "UTC"
+        self.firmware_version = "1.0.0"
+        self.override = "NONE"  # NONE, KEEP_OPEN, or KEEP_CLOSED
 
         self._ble = bluetooth.BLE()
         self._ble.active(True)
@@ -38,24 +49,38 @@ class BLE:
         DOOR_SERVICE = (
             _DOOR_SERVICE_UUID,
             (
-                (_CMD_CHAR_UUID,      _FLAG_WRITE),
-                (_STATUS_CHAR_UUID,   _FLAG_READ | _FLAG_NOTIFY),
-                (_DATETIME_CHAR_UUID, _FLAG_WRITE),
-                (_SCHEDULE_CHAR_UUID, _FLAG_READ | _FLAG_WRITE),
-                (_BATTERY_CHAR_UUID,  _FLAG_READ | _FLAG_NOTIFY),
+                (_CMD_CHAR_UUID,           _FLAG_WRITE),
+                (_STATUS_CHAR_UUID,        _FLAG_READ | _FLAG_NOTIFY),
+                (_DATETIME_CHAR_UUID,      _FLAG_WRITE),
+                (_SCHEDULE_CHAR_UUID,      _FLAG_READ | _FLAG_WRITE),
+                (_BATTERY_CHAR_UUID,       _FLAG_READ | _FLAG_NOTIFY),
+                (_DEVICE_NAME_CHAR_UUID,   _FLAG_READ | _FLAG_WRITE),
+                (_TIMEZONE_CHAR_UUID,      _FLAG_READ | _FLAG_WRITE),
+                (_FIRMWARE_CHAR_UUID,      _FLAG_READ),
+                (_SETTINGS_CHAR_UUID,      _FLAG_WRITE),
+                (_OVERRIDE_CHAR_UUID,      _FLAG_READ | _FLAG_WRITE | _FLAG_NOTIFY),
             ),
         )
-        ((cmd, status, dt, sched, batt),) = self._ble.gatts_register_services((DOOR_SERVICE,))
-        self._handles["cmd"]      = cmd
-        self._handles["status"]   = status
-        self._handles["datetime"] = dt
-        self._handles["schedule"] = sched
-        self._handles["battery"]  = batt
+        ((cmd, status, dt, sched, batt, device_name, timezone, firmware, settings, override),) = self._ble.gatts_register_services((DOOR_SERVICE,))
+        self._handles["cmd"]         = cmd
+        self._handles["status"]      = status
+        self._handles["datetime"]    = dt
+        self._handles["schedule"]    = sched
+        self._handles["battery"]     = batt
+        self._handles["device_name"] = device_name
+        self._handles["timezone"]    = timezone
+        self._handles["firmware"]    = firmware
+        self._handles["settings"]    = settings
+        self._handles["override"]    = override
 
-        # Write initial values to readable characteristics
+        # populate readable chars with default values
         self._ble.gatts_write(self._handles["status"], b"IDLE")
         self._ble.gatts_write(self._handles["battery"], b"0.00V")
         self._ble.gatts_write(self._handles["schedule"], b"[]")
+        self._ble.gatts_write(self._handles["device_name"], self.device_name.encode())
+        self._ble.gatts_write(self._handles["timezone"], self.timezone.encode())
+        self._ble.gatts_write(self._handles["firmware"], self.firmware_version.encode())
+        self._ble.gatts_write(self._handles["override"], self.override.encode())
 
     def _advertise(self, interval_us=100000):
         name = b"DoorMotor"
@@ -99,8 +124,30 @@ class BLE:
                 print(f"Schedule: {value}")
                 self.schedule_callback(value)
 
+            elif value_handle == self._handles["device_name"]:
+                print(f"Device name: {value}")
+                self.device_name = value
+                self._ble.gatts_write(self._handles["device_name"], value.encode())
+
+            elif value_handle == self._handles["timezone"]:
+                print(f"Timezone: {value}")
+                self.timezone = value
+                self._ble.gatts_write(self._handles["timezone"], value.encode())
+
+            elif value_handle == self._handles["settings"]:
+                print(f"Settings command: {value}")
+                if value == "RESET":
+                    self._reset_settings()
+
+            elif value_handle == self._handles["override"]:
+                print(f"Override: {value}")
+                if value in ("KEEP_OPEN", "KEEP_CLOSED", "NONE"):
+                    self.override = value
+                    self._ble.gatts_write(self._handles["override"], value.encode())
+                    self._notify_override()
+
     def notify_status(self, status: str):
-        # Update the stored value and notify all connected clients
+        # send status update to all connected phones
         encoded = status.encode()
         self._ble.gatts_write(self._handles["status"], encoded)
         for conn in self._connections:
@@ -124,3 +171,22 @@ class BLE:
 
     def is_connected(self):
         return len(self._connections) > 0
+
+    def _reset_settings(self):
+        # nuke config back to defaults
+        self.device_name = "DoorMotor"
+        self.timezone = "UTC"
+        self.override = "NONE"
+        self._ble.gatts_write(self._handles["device_name"], self.device_name.encode())
+        self._ble.gatts_write(self._handles["timezone"], self.timezone.encode())
+        self._ble.gatts_write(self._handles["override"], self.override.encode())
+        print("Settings reset to factory defaults")
+
+    def _notify_override(self):
+        # tell phones about override state changes
+        payload = self.override.encode()
+        for conn in self._connections:
+            try:
+                self._ble.gatts_notify(conn, self._handles["override"], payload)
+            except Exception as e:
+                print(f"Override notify error: {e}")
