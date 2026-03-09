@@ -32,11 +32,14 @@ class _StatsScreenState extends State<StatsScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // quick stats overview
-            Row(
-              children: [
+            SizedBox(
+              width: double.infinity,
+              child: Row(
+                children: [
                 Expanded(
                   child: Card(
                     child: Padding(
@@ -83,6 +86,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   ),
                 ),
               ],
+              ),
             ),
 
             const SizedBox(height: 32),
@@ -101,10 +105,12 @@ class _StatsScreenState extends State<StatsScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: _dailyStats.entries.map((entry) {
+                    SizedBox(
+                      width: double.infinity,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: _dailyStats.entries.map((entry) {
                         final height = (entry.value / maxCount * 150).toDouble();
                         return Column(
                           children: [
@@ -133,6 +139,7 @@ class _StatsScreenState extends State<StatsScreen> {
                           ],
                         );
                       }).toList(),
+                      ),
                     ),
                   ],
                 ),

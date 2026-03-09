@@ -4,10 +4,10 @@ import time
 class TMC2209:
     def __init__(self):
         #UartSet
-        self.uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1))
-        
+        self.uart = UART(0, baudrate=115200, tx=Pin(12), rx=Pin(13))
+
         #Sets control pins
-        self.step = Pin(2, Pin.OUT)
+        self.step = Pin(6, Pin.OUT)
         self.dir = Pin(3, Pin.OUT)
         self.en = Pin(4,Pin.OUT)
 

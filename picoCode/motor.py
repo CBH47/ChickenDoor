@@ -11,18 +11,26 @@ class Motor:
         self.driver.enable()
         self.driver.dir.value(direction)
         time.sleep_ms(5)
+        print(f"Starting move: direction={direction}, steps={steps}")
 
         for i in range(steps):
+            if i % 100 == 0:
+                print(f"Step {i}")
             if self.driver.is_stalled():
                 self.driver.disable()
                 return "STALL"
 
-            self.driver.step.value(1)
-            time.sleep_us(500)
+            if i == 0:
+                print(f"Step pin value before: {self.driver.step.value()}")
+                self.driver.step.value(1)
+            if i == 0:
+                print(f"Step pin value after high: {self.driver.step.value()}")
+            time.sleep_us(1000)
             self.driver.step.value(0)
-            time.sleep_us(500)
+            time.sleep_us(1000)
 
         self.driver.disable()
+        print("Move complete")
         return "DONE"
 
     def stop(self):

@@ -93,7 +93,9 @@ def on_datetime(payload):
 def handle_open():
     sm.transition("OPENING")
     ble.notify_status("OPENING")
+    print("Calling motor.move...")
     result = motor.move(1, motor.max_steps)
+    print(f"motor.move returned: {result}")
     time.sleep_ms(500)
     if result == "STALL":
         sm.transition("OPEN")
