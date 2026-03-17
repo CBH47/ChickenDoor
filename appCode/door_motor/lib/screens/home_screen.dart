@@ -1,8 +1,9 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../ble/ble_manager.dart';
 import '../services/notification_service.dart';
-
+ 
 class HomeScreen extends StatefulWidget {
   final BleManager ble;
   final VoidCallback onThemeToggle;
@@ -13,13 +14,13 @@ class HomeScreen extends StatefulWidget {
     required this.onThemeToggle,
     required this.isDarkMode,
   });
-
+ 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 class _HomeScreenState extends State<HomeScreen> {
   late BleManager _ble;
-
+ 
   @override
   void initState() {
     print("DEBUG_CHECK: VERSION_ALPHA_1");
@@ -55,7 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _rssi = rssi);
   });
 }
-
+ 
   String _status = "Disconnected";
   String _battery = "--";
   String _override = "NONE";
@@ -65,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _timerMinutes = 0;  // Active timer (0 = no timer)
   String _previousDoorState = "";  // Track door state changes for notifications
   final NotificationService _notificationService = NotificationService();
-
+ 
   // Helper method to parse door state from status
   String _getDoorState() {
     if (_status.contains("OPEN")) {
@@ -77,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return "UNKNOWN"; // dunno what the door's doing
   }
-
+ 
   // Helper method to get color based on door state
   Color _getDoorStateColor() {
     String state = _getDoorState();
@@ -86,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (state == "MOVING") return Colors.blue;
     return Colors.grey;
   }
-
+ 
   // Helper method to get icon based on door state
   IconData _getDoorStateIcon() {
     String state = _getDoorState();
@@ -95,26 +96,26 @@ class _HomeScreenState extends State<HomeScreen> {
     if (state == "MOVING") return Icons.autorenew;
     return Icons.help;
   }
-
+ 
   // Helper method to check if override is active
   bool _isOverrideActive() {
     return _override != "NONE" && _override.isNotEmpty;
   }
-
+ 
   // Helper method to get override display text
   String _getOverrideText() {
     if (_override == "KEEP_OPEN") return "Door Locked OPEN";
     if (_override == "KEEP_CLOSED") return "Door Locked CLOSED";
     return "No Override";
   }
-
+ 
   // Helper method to get override color
   Color _getOverrideColor() {
     if (_override == "KEEP_OPEN") return Colors.blue;
     if (_override == "KEEP_CLOSED") return Colors.blue;
     return Colors.grey;
   }
-
+ 
   // Helper method to get signal strength description
   String _getSignalStrength() {
     if (_rssi == 0) return "Unknown";
@@ -123,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_rssi > -70) return "Fair";
     return "Weak";
   }
-
+ 
   // Helper method to get signal strength color
   Color _getSignalColor() {
     if (_rssi == 0) return Colors.grey;
@@ -131,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_rssi > -70) return Colors.orange;
     return Colors.red;
   }
-
+ 
   // Timer dialog helper
   void _showTimerDialog() {
     showDialog(
@@ -150,19 +151,19 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+ 
   @override
   void dispose() {
     _ble.dispose();
     super.dispose();
   }
-
+ 
   Future<void> _scan() async {
     setState(() {
       _isScanning = true;
       _status = "Scanning...";
     });
-
+ 
     await _ble.startScan((BluetoothDevice device) async {
       await _ble.connect(device);
       setState(() {
@@ -171,15 +172,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _status = "Connected";
       });
     });
-
+ 
     setState(() => _isScanning = false);
   }
-
+ 
   Future<void> _sendCommand(String command) async {
     if (!_isConnected) return;
     await _ble.sendCommand(command);
   }
-
+ 
   Future<void> _disconnect() async {
     await _ble.disconnect();
     setState(() {
@@ -188,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _battery = "--";
     });
   }
-
+ 
   Future<void> _emergencyStop() async {
     showDialog(
       context: context,
@@ -215,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -307,7 +308,9 @@ class _HomeScreenState extends State<HomeScreen> {
             )
         ],
       ),
-      body: Padding(
+      // ── FIX: replaced Padding + Column with SingleChildScrollView so the
+      //    content can scroll when it exceeds the available screen height.
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -397,9 +400,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
+ 
             const SizedBox(height: 24),
-
+ 
             // Override Status Card - Show override state if connected
             if (_isConnected)
               Card(
@@ -470,9 +473,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-
+ 
             const SizedBox(height: 24),
-
+ 
             // Timer Card - Quick timer for auto-close
             if (_isConnected)
               Card(
@@ -529,9 +532,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-
+ 
             const SizedBox(height: 32),
-
+ 
             // Connect button
             if (!_isConnected)
               ElevatedButton.icon(
@@ -545,7 +548,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     : const Icon(Icons.bluetooth),
                 label: Text(_isScanning ? "Scanning..." : "Connect"),
               ),
-
+ 
             // Open/Close buttons
             if (_isConnected) ...[
               ElevatedButton.icon(
@@ -595,20 +598,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-
+ 
 class _TimerPickerDialog extends StatefulWidget {
   final Function(int) onTimerSelected;
   const _TimerPickerDialog({required this.onTimerSelected});
-
+ 
   @override
   State<_TimerPickerDialog> createState() => _TimerPickerDialogState();
 }
-
+ 
 class _TimerPickerDialogState extends State<_TimerPickerDialog> {
   int _selectedMinutes = 5;
   
   final List<int> _presets = [5, 15, 30, 60, 120];
-
+ 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

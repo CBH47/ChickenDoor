@@ -20,15 +20,10 @@ class Motor:
                 self.driver.disable()
                 return "STALL"
 
-            if i == 0:
-                print(f"Step pin value before: {self.driver.step.value()}")
-                self.driver.step.value(1)
-            if i == 0:
-                print(f"Step pin value after high: {self.driver.step.value()}")
-            time.sleep_us(1000)
+            self.driver.step.value(1)
+            time.sleep_us(1000)  # slower for full step
             self.driver.step.value(0)
             time.sleep_us(1000)
-
         self.driver.disable()
         print("Move complete")
         return "DONE"

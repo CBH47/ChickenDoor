@@ -1,14 +1,15 @@
+
 from machine import Pin, UART
 import time
 
 class TMC2209:
     def __init__(self):
         #UartSet
-        self.uart = UART(0, baudrate=115200, tx=Pin(12), rx=Pin(13))
+        self.uart = UART(0, baudrate=115200, tx=Pin(16), rx=Pin(17), txbuf=64, rxbuf=64)
 
         #Sets control pins
-        self.step = Pin(6, Pin.OUT)
-        self.dir = Pin(3, Pin.OUT)
+        self.step = Pin(10, Pin.OUT)
+        self.dir = Pin(8, Pin.OUT)
         self.en = Pin(4,Pin.OUT)
 
         #Sets diag as input
@@ -33,23 +34,20 @@ class TMC2209:
         # Returns True if DIAG pin is high (stall detected)
         return self.diag.value() == 1
     def _calc_crc(self, data):
-        # TMC2209 CRC calculation
         crc = 0
         for byte in data:
             for _ in range(8):
                 if (crc >> 7) ^ (byte & 0x01):
-                    crc = (crc << 1) ^ 0x07
+                    crc = ((crc << 1) ^ 0x07) & 0xFF
                 else:
-                    crc = crc << 1
-                crc &= 0xFF
+                    crc = (crc << 1) & 0xFF
                 byte >>= 1
         return crc
     def _write_register(self, reg, value):
-        # Build 8 byte write packet
         data = [
-            0x05,        # sync byte
+            0x05,        
             0x00,        # slave address
-            reg | 0x80,  # register address with write bit set
+            reg | 0x80,
             (value >> 24) & 0xFF,
             (value >> 16) & 0xFF,
             (value >> 8)  & 0xFF,
@@ -90,18 +88,29 @@ class TMC2209:
         # SGTHRS - StallGuard threshold
         self._write_register(0x40, 0)
         time.sleep_ms(100)
-        
+        response = self._read_register(0x00)
+        print(f"GCONF readback: {response}")
         print("TMC2209 configured")
     def _read_register(self, reg):
-        # Send read request packet
+        self.uart.read(self.uart.any())
         data = [
-            0x05,  # sync byte
+            0x05,  # sync byte (was 0x05 - WRONG)
             0x00,  # slave address
-            reg,   # register address (no write bit)
+            reg,
         ]
         crc = self._calc_crc(data)
         data.append(crc)
         self.uart.write(bytes(data))
+        time.sleep_ms(20)
+        self.uart.read(4)  # flush echo
         time.sleep_ms(5)
         response = self.uart.read(8)
         return response
+    def uart_debug(self):
+        # Check how many bytes are in the buffer
+        print(f"Bytes in buffer before: {self.uart.any()}")
+        self.uart.write(bytes([0x55, 0x00, 0x00, 0xE8]))  # raw GCONF read request
+        time.sleep_ms(20)
+        print(f"Bytes in buffer after: {self.uart.any()}")
+        raw = self.uart.read(self.uart.any())
+        print(f"Raw bytes received: {raw}")
