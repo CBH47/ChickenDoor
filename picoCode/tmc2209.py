@@ -44,6 +44,8 @@ class TMC2209:
                 byte >>= 1
         return crc
     def _write_register(self, reg, value):
+        if self.uart is None:
+            return
         data = [
             0x05,        
             0x00,        # slave address
@@ -57,45 +59,29 @@ class TMC2209:
         data.append(crc)
         self.uart.write(bytes(data))
         time.sleep_ms(2)
-    def configure(self):
-        time.sleep_ms(500)
 
-        # Reset driver state by toggling EN
-        self.en.value(1)
-        time.sleep_ms(200)
-        self.en.value(0)
-        time.sleep_ms(200)
-        self.en.value(1)
-        time.sleep_ms(500)
-        # GCONF - enable UART control
-        self._write_register(0x00, 0x00000001)
-        time.sleep_ms(100)
-        
-        # IHOLD_IRUN - set run current and hold current
-        # Bits 8-12 = IRUN (run current 0-31), Bits 0-4 = IHOLD (hold current 0-31)
-        # 31 = max current, 16 = ~50%, start at 20 for safety
-        self._write_register(0x10, 0x00001614)  # IRUN=22, IHOLD=20
-        time.sleep_ms(100)
-        
-        # CHOPCONF - 8 microsteps
-        self._write_register(0x6C, 0x10000053)
-        time.sleep_ms(100)
-        
-        # PWMCONF - enable StealthChop
-        self._write_register(0x70, 0xC10D0024)
-        time.sleep_ms(100)
-        
-        # SGTHRS - StallGuard threshold
-        self._write_register(0x40, 0)
-        time.sleep_ms(100)
-        response = self._read_register(0x00)
-        print(f"GCONF readback: {response}")
-        print("TMC2209 configured")
+    def set_hold_run_current(self, ihold, irun, ihold_delay=8):
+        return None
+
+    def set_run_mode_current(self):
+        return None
+
+    def set_hold_mode_current(self):
+        return None
+
+    def set_standstill_delay(self, delay):
+        if delay is None:
+            return
+        delay = max(0, min(255, delay))
+        self._write_register(0x11, delay)
+
     def _read_register(self, reg):
+        if self.uart is None:
+            return None
         self.uart.read(self.uart.any())
         data = [
-            0x05,  # sync byte (was 0x05 - WRONG)
-            0x00,  # slave address
+            0x05,
+            0x00,
             reg,
         ]
         crc = self._calc_crc(data)
@@ -106,6 +92,105 @@ class TMC2209:
         time.sleep_ms(5)
         response = self.uart.read(8)
         return response
+    def configure(self):
+        """Standard configuration."""
+        time.sleep_ms(500)
+        self.disable()
+        # GCONF=0: SpreadCycle always, no StealthChop velocity-mode switching.
+        self._write_register(0x00, 0x00000000)
+        time.sleep_ms(100)
+        self._write_register(0x6C, 0x10000053)  # CHOPCONF
+        time.sleep_ms(100)
+        self._write_register(0x70, 0x00050A84)  # PWMCONF
+        time.sleep_ms(100)
+        self._write_register(0x40, 255)          # GLOBALSCALER: max
+        time.sleep_ms(100)
+        self._write_register(0x11, 255)          # TPOWERDOWN: max standstill delay
+        time.sleep_ms(100)
+        # Freeze UART - GPIO-only from here.
+        try:
+            self.uart.deinit()
+        except Exception:
+            pass
+        self.uart = None
+        print("TMC2209 configured")
+    
+    def configure_high_torque(self):
+        """High-torque configuration."""
+        time.sleep_ms(500)
+        self.disable()
+        # GCONF=0: SpreadCycle always, no StealthChop velocity-mode switching.
+        self._write_register(0x00, 0x00000000)
+        time.sleep_ms(100)
+        self._write_register(0x6C, 0x10010004)  # CHOPCONF: SpreadCycle, proven motion
+        time.sleep_ms(100)
+        self._write_register(0x70, 0x00050A84)  # PWMCONF
+        time.sleep_ms(100)
+        self._write_register(0x40, 255)          # GLOBALSCALER: max
+        time.sleep_ms(100)
+        self._write_register(0x11, 255)          # TPOWERDOWN: max standstill delay
+        time.sleep_ms(100)
+        # Freeze UART - GPIO-only from here.
+        try:
+            self.uart.deinit()
+        except Exception:
+            pass
+        self.uart = None
+        print("TMC2209 configured HIGH TORQUE")
+
+    def read_register_value(self, reg):
+        response = self._read_register(reg)
+        if response and len(response) == 8:
+            return (response[3] << 24) | (response[4] << 16) | (response[5] << 8) | response[6]
+        return None
+
+    def _fmt_register_value(self, value):
+        if value is None:
+            return "None"
+        return f"0x{value:08X}"
+
+    def get_runtime_snapshot(self):
+        return {
+            "en": self.en.value(),
+            "diag": self.diag.value(),
+            "gconf": self.read_register_value(0x00),
+            "gstat": self.read_register_value(0x01),
+            "ioin": self.read_register_value(0x06),
+            "ihold_irun": self.read_register_value(0x10),
+            "chopconf": self.read_register_value(0x6C),
+            "drv_status": self.read_register_value(0x6F),
+            "pwmconf": self.read_register_value(0x70),
+        }
+
+    def log_runtime_snapshot(self, label):
+        snapshot = self.get_runtime_snapshot()
+        print(
+            f"{label}: "
+            f"EN={snapshot['en']} "
+            f"DIAG={snapshot['diag']} "
+            f"GCONF={self._fmt_register_value(snapshot['gconf'])} "
+            f"GSTAT={self._fmt_register_value(snapshot['gstat'])} "
+            f"IOIN={self._fmt_register_value(snapshot['ioin'])} "
+            f"IHOLD_IRUN={self._fmt_register_value(snapshot['ihold_irun'])} "
+            f"CHOPCONF={self._fmt_register_value(snapshot['chopconf'])} "
+            f"DRV_STATUS={self._fmt_register_value(snapshot['drv_status'])} "
+            f"PWMCONF={self._fmt_register_value(snapshot['pwmconf'])}"
+        )
+
+    def set_register_value(self, reg, value):
+        self._write_register(reg, value)
+        time.sleep_ms(100)
+        return self.read_register_value(reg)
+
+    def set_chopconf_mres(self, mres):
+        current = self.read_register_value(0x6C)
+        if current is None:
+            return None
+        candidate = (current & 0x0FFFFFFF) | ((mres & 0x0F) << 28)
+        self._write_register(0x6C, candidate)
+        time.sleep_ms(100)
+        return self.read_register_value(0x6C)
+
     def uart_debug(self):
         # Check how many bytes are in the buffer
         print(f"Bytes in buffer before: {self.uart.any()}")

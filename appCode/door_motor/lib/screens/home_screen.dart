@@ -3,14 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../ble/ble_manager.dart';
 import '../services/notification_service.dart';
+import '../services/stats_service.dart';
  
 class HomeScreen extends StatefulWidget {
   final BleManager ble;
+  final StatsService stats;
   final VoidCallback onThemeToggle;
   final bool isDarkMode;
   const HomeScreen({
     super.key,
     required this.ble,
+    required this.stats,
     required this.onThemeToggle,
     required this.isDarkMode,
   });
@@ -49,9 +52,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() => _battery = battery); // update batt display
   });
-  _ble.overrideStream.listen((override) {
-    setState(() => _override = override);
-  });
   _ble.rssiStream.listen((rssi) {
     setState(() => _rssi = rssi);
   });
@@ -59,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
  
   String _status = "Disconnected";
   String _battery = "--";
-  String _override = "NONE";
   bool _isConnected = false;
   bool _isScanning = false;
   int _rssi = 0;  // Signal strength
@@ -97,25 +96,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Icons.help;
   }
  
-  // Helper method to check if override is active
-  bool _isOverrideActive() {
-    return _override != "NONE" && _override.isNotEmpty;
-  }
- 
-  // Helper method to get override display text
-  String _getOverrideText() {
-    if (_override == "KEEP_OPEN") return "Door Locked OPEN";
-    if (_override == "KEEP_CLOSED") return "Door Locked CLOSED";
-    return "No Override";
-  }
- 
-  // Helper method to get override color
-  Color _getOverrideColor() {
-    if (_override == "KEEP_OPEN") return Colors.blue;
-    if (_override == "KEEP_CLOSED") return Colors.blue;
-    return Colors.grey;
-  }
- 
   // Helper method to get signal strength description
   String _getSignalStrength() {
     if (_rssi == 0) return "Unknown";
@@ -139,11 +119,13 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) => _TimerPickerDialog(
         onTimerSelected: (minutes) {
+          widget.stats.setPendingReason('Timer');
           _ble.sendTimerCommand(minutes);
           setState(() => _timerMinutes = minutes);
           // Reset timer after specified time (for UI countdown)
           Future.delayed(Duration(minutes: minutes), () {
             if (mounted) {
+              widget.stats.setPendingReason('Timer');
               setState(() => _timerMinutes = 0);
             }
           });
@@ -178,6 +160,9 @@ class _HomeScreenState extends State<HomeScreen> {
  
   Future<void> _sendCommand(String command) async {
     if (!_isConnected) return;
+    if (command == 'OPEN' || command == 'CLOSE') {
+      widget.stats.setPendingReason('Manual');
+    }
     await _ble.sendCommand(command);
   }
  
@@ -191,29 +176,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
  
   Future<void> _emergencyStop() async {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Emergency Stop"),
-        content: const Text("This will immediately stop the motor. Are you sure?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _ble.sendCommand("STOP");
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Motor stopped")),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("Stop Motor"),
-          ),
-        ],
-      ),
+    if (!_isConnected) return;
+    await _ble.sendCommand("STOP");
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Emergency stop sent")),
     );
   }
  
@@ -402,77 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
  
             const SizedBox(height: 24),
- 
-            // Override Status Card - Show override state if connected
-            if (_isConnected)
-              Card(
-                color: _isOverrideActive() ? _getOverrideColor().withOpacity(0.15) : Colors.grey.withOpacity(0.05),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        "Override Control",
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _getOverrideText(),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: _getOverrideColor(),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Override buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _ble.setOverride("KEEP_OPEN"),
-                              icon: const Icon(Icons.lock_open),
-                              label: const Text("Lock Open"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.green,
-                                side: const BorderSide(color: Colors.green),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _ble.setOverride("KEEP_CLOSED"),
-                              icon: const Icon(Icons.lock),
-                              label: const Text("Lock Closed"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.orange,
-                                side: const BorderSide(color: Colors.orange),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _isOverrideActive() ? () => _ble.clearOverride() : null,
-                          icon: const Icon(Icons.lock_outline),
-                          label: const Text("Clear Override"),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: BorderSide(
-                              color: _isOverrideActive() ? Colors.red : Colors.grey,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
  
             const SizedBox(height: 24),
  

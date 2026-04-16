@@ -1,97 +1,117 @@
 import 'package:flutter/material.dart';
+import '../services/stats_service.dart';
 
 class StatsScreen extends StatefulWidget {
-  const StatsScreen({super.key});
+  final StatsService stats;
+  const StatsScreen({super.key, required this.stats});
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
 }
 
 class _StatsScreenState extends State<StatsScreen> {
-  // TODO: replace with real data from BLE when ready
-  final Map<String, int> _dailyStats = {
-    'Mon': 12,
-    'Tue': 15,
-    'Wed': 8,
-    'Thu': 10,
-    'Fri': 14,
-    'Sat': 6,
-    'Sun': 9,
-  };
+  static const List<String> _days = [
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.stats.addListener(_onStatsChanged);
+  }
+
+  void _onStatsChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _resetStats() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Statistics'),
+        content: const Text(
+          'This will erase all locally stored stats. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Reset', style: TextStyle(color: Colors.red.shade700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await widget.stats.reset();
+    }
+  }
+
+  String _formatEventTime(int epochSeconds) {
+    if (epochSeconds <= 0) return 'Unknown time';
+    final dt = DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000);
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '${dt.month}/${dt.day} at $hh:$mm';
+  }
+
+  @override
+  void dispose() {
+    widget.stats.removeListener(_onStatsChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final maxCount = _dailyStats.values.reduce((a, b) => a > b ? a : b).toDouble();
-    final totalCount = _dailyStats.values.reduce((a, b) => a + b);
-    final avgCount = (totalCount / _dailyStats.length).round();
+    final dailyStats = widget.stats.dailyStats;
+    final recentActivity = widget.stats.recentActivity;
+    final totalOperations = widget.stats.totalOperations;
+    final dailyAverage = widget.stats.dailyAverage;
+
+    final maxCount = dailyStats.values.isEmpty
+        ? 1.0
+        : dailyStats.values.reduce((a, b) => a > b ? a : b).toDouble();
+    final todayKey = _days[DateTime.now().weekday - 1];
+    final todayCount = dailyStats[todayKey] ?? 0;
+    final avgStr = dailyAverage.toStringAsFixed(1);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Daily Statistics"),
+        title: const Text('Daily Statistics'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Reset stats',
+            onPressed: _resetStats,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // quick stats overview
-            SizedBox(
-              width: double.infinity,
-              child: Row(
-                children: [
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          Text(
-                            "Total Today",
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            "${_dailyStats['Sun']}",
-                            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+            Row(
+              children: [
+                Expanded(child: _statCard('Total Today', '$todayCount')),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          Text(
-                            "Weekly Avg",
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            "$avgCount",
-                            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                Expanded(child: _statCard('Weekly Avg', avgStr)),
+                const SizedBox(width: 16),
+                Expanded(child: _statCard('All Time', '$totalOperations')),
               ],
-              ),
             ),
-
             const SizedBox(height: 32),
-
-            // chart showing daily operations
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
@@ -99,56 +119,54 @@ class _StatsScreenState extends State<StatsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Door Operations Per Day",
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Door Operations Per Day',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: _dailyStats.entries.map((entry) {
-                        final height = (entry.value / maxCount * 150).toDouble();
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: _days.map((day) {
+                        final count = dailyStats[day] ?? 0;
+                        final height = maxCount > 0
+                            ? (count / maxCount * 150).toDouble()
+                            : 0.0;
+                        final isToday = day == todayKey;
                         return Column(
                           children: [
-                            // Bar
                             Container(
                               width: 35,
-                              height: height,
+                              height: height.clamp(4.0, 150.0),
                               decoration: BoxDecoration(
-                                color: Colors.blue,
+                                color: isToday
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withOpacity(0.4),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                             ),
                             const SizedBox(height: 8),
-                            // Value
                             Text(
-                              "${entry.value}",
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                              '$count',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
-                            // Day label
                             Text(
-                              entry.key,
+                              day,
                               style: Theme.of(context).textTheme.labelSmall,
                             ),
                           ],
                         );
                       }).toList(),
-                      ),
                     ),
                   ],
                 ),
               ),
             ),
-
             const SizedBox(height: 24),
-
-            // recent door events
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -156,60 +174,88 @@ class _StatsScreenState extends State<StatsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Recent Activity",
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Recent Activity',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: 5,
-                      separatorBuilder: (_, __) => const Divider(),
-                      itemBuilder: (context, index) {
-                        final times = ["14:30", "12:15", "10:45", "08:20", "06:00"];
-                        final actions = ["OPEN", "CLOSE", "OPEN", "CLOSE", "OPEN"];
-                        final reasons = ["Schedule", "Schedule", "Manual", "Schedule", "Schedule"];
-                        
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Row(
-                            children: [
-                              Icon(
-                                actions[index] == "OPEN"
-                                    ? Icons.arrow_upward
-                                    : Icons.arrow_downward,
-                                color: actions[index] == "OPEN"
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "${actions[index]} - ${reasons[index]}",
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      "Today at ${times[index]}",
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
+                    if (recentActivity.isEmpty)
+                      Text(
+                        'No recent activity yet.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      )
+                    else
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: recentActivity.length,
+                        separatorBuilder: (_, __) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final event = recentActivity[index];
+                          final isOpen = event['action'] == 'OPEN';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isOpen
+                                      ? Icons.arrow_upward
+                                      : Icons.arrow_downward,
+                                  color: isOpen ? Colors.green : Colors.red,
                                 ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "${event['action']} - ${event['reason']}",
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                      Text(
+                                        _formatEventTime(
+                                          event['timestamp'] as int,
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statCard(String label, String value) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.displaySmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
           ],
         ),
